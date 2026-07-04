@@ -1,0 +1,34 @@
+function createOllama(db) {
+  const cfg = () => {
+    const s = db.getSettings();
+    return { baseUrl: s.ollamaUrl, model: s.ollamaModel };
+  };
+
+  const chat = async (messages) => {
+    const { baseUrl, model } = cfg();
+    const res = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, messages, stream: false }),
+    });
+    if (!res.ok) throw new Error(`Ollama ${res.status}`);
+    const data = await res.json();
+    return data?.message?.content?.trim() || "";
+  };
+
+  const ping = async () => {
+    try {
+      const { baseUrl } = cfg();
+      const r = await fetch(`${baseUrl}/api/tags`);
+      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
+      const j = await r.json();
+      return { ok: true, models: (j.models || []).map((m) => m.name) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  };
+
+  return { chat, ping };
+}
+
+module.exports = { createOllama };

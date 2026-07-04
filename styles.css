@@ -1,0 +1,23 @@
+FROM node:20-slim
+
+# Chromium + deps for whatsapp-web.js (Puppeteer)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    ca-certificates fonts-liberation libnss3 libatk-bridge2.0-0 \
+    libatk1.0-0 libcups2 libdrm2 libgbm1 libgtk-3-0 libx11-xcb1 \
+    libxcomposite1 libxdamage1 libxrandr2 libasound2 libpangocairo-1.0-0 \
+    libxshmfence1 libglu1-mesa \
+  && rm -rf /var/lib/apt/lists/*
+
+# Tell whatsapp-web.js/puppeteer to use the system Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev
+COPY . .
+
+ENV NODE_ENV=production
+EXPOSE 3000
+CMD ["node", "src/server.js"]

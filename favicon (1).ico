@@ -1,0 +1,89 @@
+const path = require("path");
+const qrcode = require("qrcode");
+const { Client, LocalAuth } = require("whatsapp-web.js");
+
+function createWhatsApp({ userDataDir, onEvent, onMessage }) {
+  let client = null;
+  let status = "idle";
+  let lastQr = null;
+
+  const setStatus = (s) => {
+    status = s;
+    onEvent("wa:status", s);
+  };
+
+  const start = async () => {
+    if (client) return { status };
+    setStatus("starting");
+    client = new Client({
+      authStrategy: new LocalAuth({
+        dataPath: path.join(userDataDir, "wa-session"),
+      }),
+      puppeteer: {
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      },
+    });
+
+    client.on("qr", async (qr) => {
+      lastQr = await qrcode.toDataURL(qr, { margin: 1, width: 320 });
+      setStatus("qr");
+      onEvent("wa:qr", lastQr);
+    });
+    client.on("authenticated", () => setStatus("authenticated"));
+    client.on("ready", () => {
+      lastQr = null;
+      setStatus("ready");
+    });
+    client.on("disconnected", () => {
+      setStatus("disconnected");
+      client = null;
+    });
+    client.on("message", async (m) => {
+      onMessage({
+        id: m.id?._serialized || `${Date.now()}`,
+        chatId: m.from,
+        from: m.from,
+        body: m.body,
+        fromMe: !!m.fromMe,
+        author: "client",
+        ts: (m.timestamp || Date.now() / 1000) * 1000,
+      });
+    });
+
+    client.initialize().catch((err) => {
+      console.error("WA init error", err);
+      setStatus("disconnected");
+    });
+    return { status };
+  };
+
+  const stop = async () => {
+    if (!client) return;
+    try {
+      await client.destroy();
+    } catch {}
+    client = null;
+    setStatus("idle");
+  };
+
+  const logout = async () => {
+    if (!client) return;
+    try {
+      await client.logout();
+    } catch {}
+    client = null;
+    setStatus("idle");
+  };
+
+  const send = async (chatId, text) => {
+    if (!client || status !== "ready") throw new Error("WhatsApp не подключён");
+    await client.sendMessage(chatId, text);
+  };
+
+  const getStatus = async () => ({ status, qr: lastQr || undefined });
+
+  return { start, stop, logout, send, getStatus };
+}
+
+module.exports = { createWhatsApp };
